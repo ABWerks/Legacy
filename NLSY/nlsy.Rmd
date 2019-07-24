@@ -1,0 +1,221 @@
+---
+title: "The association between education and earnings in the 1997 National Longitudinal Survey of Youth."
+author: "Adam J Batten"
+date: "April 2019"
+output: tint::tintPdf
+bibliography: nlsy.bib
+link-citations: yes
+---
+
+```{r setup, warnings=FALSE, message=FALSE}
+library(tint)
+library(dplyr)
+library(survey)
+library(tableone)
+library(ggplot2)
+library(ggthemes)
+# invalidate cache when the package version changes
+knitr::opts_chunk$set(tidy = FALSE, cache.extra = packageVersion('tint')
+                      , comment = "")
+options(htmltools.dir.version = FALSE)
+
+# Data
+load("nlsyModelMatrix.Rdata")
+svyds <- svydesign(data = ds, ids = ~PUBID_1997, weights = ~WEIGHT)
+```
+
+# Introduction
+
+## Explanation of Research Topic
+
+Using data from the National Longitudinal Study of Youth, we analyze the relationship between education and poverty. We hypothesize that increased levels of education lead to less poverty. While many studies have already shown this to be true of earlier cohorts [@Card-1994], to our knowledge, there has not been a study to date that analyzes this relationship using the more recent 1997 cohort. This analysis is relevant as it has been rumoured [@Chetty-2018] that the offspring of the Baby Boomer generation are slated to earn less (on avearge) than there progenitors.
+
+## Design
+
+We conducted a cross-sectional cohort study using the most recent responses to the NLSY follow-up surveys which were conducted in 2015. Our primary outcome is the ratio of household income to the poverty level in 2015. The primary exposure of interest is the highest level of education acheived. We model the ratio of income to poverty as a continuous variable using multivariate linear regression.
+
+## Data Source
+
+The 1997 National Longitudinal Survey of Youth^[U.S. Bureau of Labor Statistics (BLS) website [NLSY- 1997](https://www.nlsinfo.org/content/cohorts/nlsy97)] consists of repeat observations on 8,984 U.S men and women born in the years 1980-84; respondents were ages 12-17 when first interviewed in 1997. This cohort has been interviewed several times since 1997 and most recently in 2015. While each survey in the NLSY has over 100,000 variables, the features we are interested in are income and education. In adjusted analysis, we consider a subset of features including: employment history, family background, marital status, childcare & fertility, health, attitudes, and crime & substance use.
+
+# Methods
+
+## Cohort & Exclusions 
+
+In the first step of our analysis we exclude any respondents that had no interviews in 2015. We can identify this with the `CVC_RND_XRND` feature which is an integer representing each year since 1997. Since we only want respondents to the 2015 wave we remove anyone with `CVC_RND_XRND < 17`. This resulted in an exclusion of 1,881 respondents from our cohort. 
+
+## Outcome
+
+There are several income related questions on the NLSY, including the below. `r margin_note("Select income features from the NLSY 1997.")` In the current analysis we are primarily interested in the `CV_HH_POV_RATIO` features. We used the ratio of household income to the poverty level in 2015 as our main outcome. Adjusted analysis included the same metric from 1997 to account for the baseline wealth of the respondents household.
+
+![Income Variables](nlsy_pic01.png)
+
+## Primary exposure
+
+The primary exposure of interest in this analysis was the highest degree received as of 2015 (`CVC_HIGHEST_DEGREE_EVER`). This feature has the following possible allowed responses:
+
+ ```yaml
+0 None
+1 GED
+2 High school diploma (Regular 12 year program)
+3 Associate/Junior college (AA)
+4 Bachelor's degree (BA, BS)
+5 Master's degree (MA, MS)
+6 PhD
+7 Professional degree (DDS, JD, MD)
+```
+
+## Adjustment features
+
+The NLSY has hundreds of demographic and socio-economic data on their respondents. In the current analysis we decided to focus on a subset of these, including: sex, race, marital status, whether the respondent resides in a metropolitan statistical area (MSA), the number of biological children, and the health status of respondent.
+
+We selected sex to account for the differences in earnings potential across genders, and similar reasoning was followed when including race. We included marital status to account for the potential increase in household wealth resulting from a potential spouses income. MSA was included to accouunt for spatial differences in income. We included the number of children to adjust for the fact that children are very expensive. Finally we included the health status of the respondents as illness can impact longterm earnings due to extended absences from work.
+
+## Statistical Analysis
+
+In analyzing this data the BLS recommends using their post-stratification survey weights. Thus we use survey weighted least squares regression to assess the relationship between the poverty ratio and education. Specifically our primary model can be parameterized as^[All statistical analysis was conducted with the survey package [@R-survey] in R [@R-base]. This report was rendered in markdown [@R-rmarkdown] using the tint template [@R-tint].]
+
+$$
+R \sim \beta_0+\beta_1X_{{Education}}
+$$
+Where $R$ is the ratio of household income to the poverty level in 2015. For the adjusted analysis we considered the following model:
+
+$$
+\begin{aligned}
+R \sim \beta_0&+\beta_1X_{{Education}}+\beta_2X_{Female}+\beta_3X_{Race}+\beta_4X_{HealthStatus}\\ &+\beta_5X_{MaritalStatus}+\beta_6X_{MSA}+\beta_7X_{zChildren}
+\end{aligned}
+$$
+
+# Results
+
+## Univariate Statistics
+
+Looking at our table of demographics we can get a better idea of our sample. The majority of the sample is White (70.4%), in good to very good health (66%), married (48%), live in the suburbs (56%), have on average 1.4 children, are relatively wealthy and earn ~4 times the poverty rate, and 40% have some post-High School education.
+
+```{r}
+kableone(svyCreateTableOne(data = svyds
+          , vars = c("Female", "Race", "HealthStatus"
+             , "MaritalStatus", "MSA", "Children"
+             , "PovertyRatio1997", "PovertyRatio2015"
+             , "HighestDegreeCat"))
+         , caption = 'Table 1: Patient demographics, poverty, and education.')
+```
+
+## Bivariate Relationships
+
+Looking at some bivariate relationships between poverty rate and our adjustment features we see some evidence towards confirmation of our hypothesis. The increasing trend in wealth with increasing education is made apparent in Fig. 2. 
+
+```{r, fig.width = 7, fig.height = 5, fig.cap = "Boxplots reveal a nice linear trend with more education and health.", warning=FALSE, cache=TRUE}
+par(mfrow = c(1,2))
+svyboxplot(PovertyRatio2015 ~ HighestDegreeCat
+           , design = svyds, horizontal = TRUE
+           , las = 2, main = "PovertyRatio2015 ~ HighestDegreeCat")
+svyboxplot(PovertyRatio2015 ~ HealthStatus
+           , design = svyds, horizontal = TRUE
+           , las = 2, main = "PovertyRatio2015 ~ HealthStatus")
+```
+
+```{r, fig.width = 7, fig.height = 5, fig.cap = "Boxplots reveal slight decreases in poverty across sex and marital status (SepaDivoWido is the separated, divorced, or widowed category).", warning=FALSE, cache=TRUE}
+par(mfrow = c(1,2))
+svyboxplot(PovertyRatio2015 ~ MaritalStatus
+           , design = svyds, horizontal = TRUE
+           , las = 2, main = "PovertyRatio2015 ~ MaritalStatus")
+svyboxplot(PovertyRatio2015 ~ factor(Female)
+           , design = svyds
+           , main = "PovertyRatio2015 ~ Female")
+```
+
+## Main Effect
+
+We begin modeling our relationship with the single predictor first. Since we are dealing with survey weighted data we run a survey weighted regression in addition to the standard OLS model. Wald tests for the significance of this regression model are highly significant, providing evidence towards a relationship between education and wealth.
+
+```{r, out.width = 100}
+# Survey weighted model
+svym01 <- svyglm(PovertyRatio2015 ~ HighestDegreeCat, design = svyds)
+# Ignoring the weights
+m01 <- lm(PovertyRatio2015 ~ HighestDegreeCat, data = ds)
+# Wald test
+regTermTest(svym01, ~HighestDegreeCat)
+anova(m01)
+```
+
+To see how close the effect sizes are for the survey weighted and standard models we can quickly plot the coefficient and 95% confidence intervals. From Fig. 4 we can see that the coefficient estimates are quite close whether we decide to include the survey weights or not. Interestingly, while the estimated effect due to PhD is significant it is highly unstable (high variability) and does not appear to be significantly different from the effect of Master's.
+
+```{r, fig.width=6, fig.height=4, fig.cap = "95 confidence intervals for the model coefficient estimates for both the non-survey weighted regression (M01) and the survey weighted regression (SVYM01)", cache=TRUE, echo=TRUE}
+# Create dataFrame of coefficient estimates
+coefMain <- rbind.data.frame(confint(m01), confint(svym01))
+names(coefMain) <- c("LB", "UB")
+coefMain$Estimate <- c(coef(m01), coef(svym01))
+coefMain$Term <- gsub("HighestDegreeCat","", gsub("\\d+","", rownames(coefMain)))
+coefMain$Model <- c(rep("M01", length(coef(m01))), rep("SVYM01", length(coef(m01))))
+# Order the terms by effect size
+foo <- aggregate(Estimate ~ Term, coefMain, mean)
+coefMain$Terms <- factor(coefMain$Term, levels = foo$Term[order(foo$Estimate)])
+ggplot(coefMain, aes(x = Terms, y = Estimate, group = Model, colour = Model)) +
+  geom_errorbar(aes(ymin=LB,ymax=UB), position = "dodge") +
+  coord_flip() +
+  theme_tufte()
+```
+
+## Multivariate Model
+
+In the next step we add the adjustment variables and test for significance of regression. The Wald test and Ftest reveal that education is still a significant predictor of wealth even after accounting for sex, race, health, marital status, location, number of children, and historic poverty.
+
+```{r, out.width = 100}
+svym02 <- update(svym01, . ~ . + Female + Race + HealthStatus 
+        + MaritalStatus + MSA + zChildren + PovertyRatio1997)
+m02 <- update(m01, . ~ . + Female + Race + HealthStatus 
+        + MaritalStatus + MSA + zChildren + PovertyRatio1997)
+regTermTest(svym01, ~HighestDegreeCat)
+anova(m02)
+```
+
+To see which levels of the factor variables are contributing to the model fit we again plot the 95% CI for the coefficient estimates. We include a vertical bar at 0 to highlight those effects that are not significantly different from zero. From Fig. 5 we see that 
+
+```{r, fig.width=6, fig.height=4, fig.cap = "95 confidence intervals for the model coefficient estimates from the adjusted models: non-survey weighted regression (M01) and the survey weighted regression (SVYM01)", cache=TRUE, echo=TRUE}
+# Create dataFrame of coefficient estimates
+coefMain2 <- rbind.data.frame(confint(m02), confint(svym02))
+names(coefMain2) <- c("LB", "UB")
+coefMain2$Estimate <- c(coef(m02), coef(svym02))
+coefMain2$Term <- gsub("HighestDegreeCat","", gsub("\\d+","", rownames(coefMain2)))
+coefMain2$Model <- c(rep("M02", length(coef(m02))), rep("SVYM02", length(coef(m02))))
+# Order the terms by effect size
+foo <- aggregate(Estimate ~ Term, coefMain2, mean)
+coefMain2$Terms <- factor(coefMain2$Term, levels = foo$Term[order(foo$Estimate)])
+ggplot(coefMain2, aes(x = Terms, y = Estimate, group = Model, colour = Model)) +
+  geom_errorbar(aes(ymin=LB,ymax=UB), position = "dodge") +
+  coord_flip() +
+  geom_hline(yintercept = 0, alpha = 0.4) +
+  theme_tufte()
+```
+
+Listing the predictors that are significant we see that all of the education levels are significant and increasing with higher levels. This confirms our hypothesis. However, the model fit is quite bad (adjusted $R^2$ = `r summary(m02)$adj.r.squared`) and only accounts for 24% of the variability in the data.
+
+```{r}
+sigEffects <- unique(coefMain2[!(coefMain2$LB<=0 & coefMain2$UB>=0), 'Term'])
+knitr::kable(coefMain2[coefMain2$Term%in%sigEffects & coefMain2$Model=="M02"
+                      , c("Terms", "Estimate", "LB", "UB")]
+             , row.names = FALSE)
+```
+
+`r newthought("Is a PhD worth it?")` Digging into our discovery above about the overlap in effects between the effects due to Master's and PhD's we test the linear hypothesis that $\beta_{PhD} = \beta_{Master's}$ using the [@R-multcomp] package. The large p-value on the below tests reveals that under the assumptions in this model, PhD's and Master's are on average equivalently wealthy (or poor, depending on your point of view). 
+
+```{r, out.width=200}
+summary(multcomp::glht(m02
+      , linfct = c("HighestDegreeCatMaster - HighestDegreeCatPhD = 0")))
+```
+
+Just to verify that a Master's degree is worth the effort we can also test the hypothesis that $\beta_{Bachelor's} = \beta_{Master's}$. While the p-value is significant, it is borderline.
+
+```{r, out.width=200}
+summary(multcomp::glht(m02
+      , linfct = c("HighestDegreeCatMaster - HighestDegreeCatBachelor = 0")))
+```
+
+# Conclusions
+
+This study analyzed the relationship between education and wealth using the National Longitudinal Survey of Youth from 1997. In our analysis we found a strong association between education and wealth as measured by the proportion of earnings above the poverty line. This relationship held after adjusting for respondent demographics, location, and baseline poverty. 
+
+While we originally expected a linear trend, with higher education leading to higher wealth, we discovered that while respondents with Master's degrees are wealthier than respondents with Bachelor's, it is not the case that respondents with PhD's have higher earnings than Master's (on average).
+
+The major limitation in this study is the overall poor fit of the models. Further analysis should be done using more advanced methods to identify those factors that influence the relationship between education and wealth.
